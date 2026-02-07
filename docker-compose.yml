@@ -8,10 +8,11 @@ services:
     env_file:
       - .env
     volumes:
-      - ./bot.db:/app/bot.db
+      - ./data:/app/data
       - ./logs:/app/logs
       - telegram_temp:/tmp/telegram_bot_files
     environment:
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/bot.db
       - TZ=Europe/Moscow
     logging:
       driver: "json-file"
