@@ -63,6 +63,30 @@ async def on_startup():
 
     # Initialize database
     logger.info("Initializing database...")
+
+    # Debug: Check database directory
+    import os
+    import re
+    db_url = Config.DATABASE_URL
+    logger.info(f"Database URL: {db_url}")
+
+    # Extract file path from SQLite URL
+    match = re.search(r'sqlite\+aiosqlite:///(.+)', db_url)
+    if match:
+        db_path = Path(match.group(1))
+        db_dir = db_path.parent
+
+        logger.info(f"Database file path: {db_path}")
+        logger.info(f"Database directory: {db_dir}")
+        logger.info(f"Directory exists: {db_dir.exists()}")
+        logger.info(f"Directory is writable: {os.access(db_dir, os.W_OK) if db_dir.exists() else 'N/A'}")
+
+        # Create directory if it doesn't exist
+        if not db_dir.exists():
+            logger.info(f"Creating directory: {db_dir}")
+            db_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Directory created successfully")
+
     init_database(Config.DATABASE_URL)
     await create_tables()
     logger.info("Database initialized successfully")
