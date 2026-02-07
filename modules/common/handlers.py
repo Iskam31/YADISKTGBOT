@@ -61,3 +61,8 @@ async def cmd_help(message: Message):
         "• Попробуй переотправить файл\n"
         "• Перенастрой токен: /token"
     )
+
+
+def setup(dp):
+    """Register common module handlers."""
+    dp.include_router(router)
