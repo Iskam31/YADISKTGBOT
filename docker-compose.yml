@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
+      - bot_data:/app/data
       - ./logs:/app/logs
       - telegram_temp:/tmp/telegram_bot_files
     environment:
@@ -21,4 +21,5 @@ services:
         max-file: "3"
 
 volumes:
+  bot_data:
   telegram_temp:
