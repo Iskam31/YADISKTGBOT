@@ -46,7 +46,10 @@ class YandexDiskAPI:
                         logger.info("Token validation successful")
                         return True
                     else:
+                        response_text = await response.text()
                         logger.warning(f"Token validation failed: {response.status}")
+                        logger.warning(f"Response body: {response_text}")
+                        logger.debug(f"Request headers: {self.headers}")
                         return False
         except Exception as e:
             logger.error(f"Token validation error: {e}")

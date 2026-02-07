@@ -14,7 +14,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_session
-from core.crypto import TokenEncryption
+from core.crypto import get_encryption
 from .models import YandexToken, UploadedFile
 from .service import YandexDiskAPI
 from .keyboards import (
@@ -200,7 +200,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
 
     # Encrypt and save token to database
     try:
-        encryption = TokenEncryption()
+        encryption = get_encryption()
         encrypted_token = encryption.encrypt(token)
 
         async for session in get_session():
@@ -290,7 +290,7 @@ async def handle_file_upload(message: Message, bot: Bot, file_id: str, file_name
                 return
 
             # Decrypt token
-            encryption = TokenEncryption()
+            encryption = get_encryption()
             oauth_token = encryption.decrypt(token_record.encrypted_token)
             folder_name = token_record.folder_name
 
@@ -602,7 +602,7 @@ async def execute_delete(callback: CallbackQuery):
                 return
 
             # Decrypt token and delete from Yandex
-            encryption = TokenEncryption()
+            encryption = get_encryption()
             oauth_token = encryption.decrypt(token_record.encrypted_token)
             api = YandexDiskAPI(oauth_token)
 
