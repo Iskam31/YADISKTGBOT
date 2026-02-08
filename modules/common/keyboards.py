@@ -1,0 +1,29 @@
+"""Keyboard utilities for common module.
+
+Provides keyboard layouts for the main menu and other common interactions.
+"""
+
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+
+def get_main_menu() -> ReplyKeyboardMarkup:
+    """Create persistent main menu with 4 buttons in 2x2 layout.
+
+    Returns:
+        ReplyKeyboardMarkup with Upload, My Files, Settings, and Help buttons
+    """
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="📤 Загрузить"),
+                KeyboardButton(text="📁 Мои файлы")
+            ],
+            [
+                KeyboardButton(text="⚙️ Настройки"),
+                KeyboardButton(text="ℹ️ Помощь")
+            ]
+        ],
+        resize_keyboard=True,
+        is_persistent=True
+    )
+    return keyboard
