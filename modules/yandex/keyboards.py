@@ -1,8 +1,9 @@
 """Telegram keyboards for Yandex Disk module."""
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-from typing import List
+from typing import List, Optional
 import base64
+import hashlib
 
 
 def get_folder_selection_keyboard() -> InlineKeyboardMarkup:
@@ -158,6 +159,95 @@ def decode_path(encoded: str) -> str:
     return decoded_bytes.decode('utf-8')
 
 
+def hash_path(path: str) -> str:
+    """Create a short hash of a path for use in callback_data.
+
+    Args:
+        path: File system path
+
+    Returns:
+        8-character hex hash of the path
+    """
+    md5_hash = hashlib.md5(path.encode('utf-8')).hexdigest()
+    return md5_hash[:8]  # First 8 characters (32 bits) for uniqueness
+
+
+def encode_path_smart(path: str) -> str:
+    """Encode path for callback_data, using hash for long paths.
+
+    Args:
+        path: File system path
+
+    Returns:
+        Encoded path or hash, prefixed with 'p:' for path or 'h:' for hash
+
+    Examples:
+        Short path: "p:L2ZvbGRlcg"  # base64 of "/folder"
+        Long path: "h:a1b2c3d4"  # hash of long path
+    """
+    encoded = encode_path(path)
+
+    # Test callback_data length with longest prefix (nav_page_100_)
+    test_callback = f"nav_page_100_{encoded}"
+
+    if len(test_callback.encode('utf-8')) <= 60:  # Safe limit
+        return f"p:{encoded}"
+    else:
+        return f"h:{hash_path(path)}"
+
+
+def decode_path_smart(encoded: str) -> tuple[str, bool]:
+    """Decode path from callback_data.
+
+    Args:
+        encoded: Encoded path with prefix (p: or h:)
+
+    Returns:
+        Tuple of (path_or_hash, is_hash)
+        - If is_hash=False: returns actual path
+        - If is_hash=True: returns hash (caller must lookup in FSM)
+
+    Examples:
+        "p:L2ZvbGRlcg" -> ("/folder", False)
+        "h:a1b2c3d4" -> ("a1b2c3d4", True)
+    """
+    if encoded.startswith('p:'):
+        return (decode_path(encoded[2:]), False)
+    elif encoded.startswith('h:'):
+        return (encoded[2:], True)
+    else:
+        # Backward compatibility: assume it's a direct encoded path
+        return (decode_path(encoded), False)
+
+
+async def store_path_mapping(state_data: dict, path_hash: str, actual_path: str) -> None:
+    """Store path mapping in FSM context.
+
+    Args:
+        state_data: FSM context data dict
+        path_hash: Hash of the path
+        actual_path: Actual file system path
+    """
+    if 'path_mappings' not in state_data:
+        state_data['path_mappings'] = {}
+    state_data['path_mappings'][path_hash] = actual_path
+
+
+async def get_path_from_hash(state_data: dict, path_hash: str) -> Optional[str]:
+    """Retrieve actual path from hash in FSM context.
+
+    Args:
+        state_data: FSM context data dict
+        path_hash: Hash of the path
+
+    Returns:
+        Actual path if found, None otherwise
+    """
+    if 'path_mappings' not in state_data:
+        return None
+    return state_data['path_mappings'].get(path_hash)
+
+
 def truncate(text: str, max_len: int = 30) -> str:
     """Truncate long text with ellipsis.
 
@@ -230,15 +320,19 @@ def get_file_browser_keyboard(
             - Close button (❌ Закрыть)
 
     Callback data format:
-        - Folder: "nav_open_{encoded_path}"
-        - Info: "nav_info_{encoded_path}"
-        - Publish: "nav_publish_{encoded_path}"
-        - Delete: "nav_delete_{encoded_path}"
-        - Page prev: "nav_page_{offset-limit}_{encoded_path}"
-        - Page next: "nav_page_{offset+limit}_{encoded_path}"
-        - Up: "nav_up_{encoded_parent_path}"
-        - Select: "nav_select_{encoded_path}"
+        - Folder: "nav_open_p:{base64}" or "nav_open_h:{hash}"
+        - Info: "nav_info_p:{base64}" or "nav_info_h:{hash}"
+        - Publish: "nav_publish_p:{base64}" or "nav_publish_h:{hash}"
+        - Delete: "nav_delete_p:{base64}" or "nav_delete_h:{hash}"
+        - Page prev: "nav_page_{offset-limit}_p:{base64}" or "nav_page_{offset-limit}_h:{hash}"
+        - Page next: "nav_page_{offset+limit}_p:{base64}" or "nav_page_{offset+limit}_h:{hash}"
+        - Up: "nav_up_p:{base64}" or "nav_up_h:{hash}"
+        - Select: "nav_select_p:{base64}" or "nav_select_h:{hash}"
         - Close: "nav_close"
+
+        Paths are base64 encoded (prefix 'p:') if short enough,
+        or MD5 hashed (prefix 'h:') for long paths to stay under
+        Telegram's 64-byte callback_data limit.
     """
     buttons = []
     limit = 20  # Fixed limit for pagination
@@ -255,7 +349,7 @@ def get_file_browser_keyboard(
     for folder in folders:
         folder_name = folder.get("name", "Unknown")
         folder_path = folder.get("path", "")
-        encoded_path = encode_path(folder_path)
+        encoded_path = encode_path_smart(folder_path)
 
         # Truncate folder name if too long
         display_name = truncate(folder_name, 35)
@@ -271,7 +365,7 @@ def get_file_browser_keyboard(
     for file in files:
         file_name = file.get("name", "Unknown")
         file_path = file.get("path", "")
-        encoded_path = encode_path(file_path)
+        encoded_path = encode_path_smart(file_path)
         is_published = "public_url" in file and file.get("public_url")
 
         # Truncate filename for display
@@ -299,7 +393,7 @@ def get_file_browser_keyboard(
         nav_buttons = []
         if offset > 0:
             prev_offset = max(0, offset - limit)
-            encoded_path = encode_path(current_path)
+            encoded_path = encode_path_smart(current_path)
             nav_buttons.append(
                 InlineKeyboardButton(
                     text="⬅️ Назад",
@@ -309,7 +403,7 @@ def get_file_browser_keyboard(
 
         if offset + limit < total:
             next_offset = offset + limit
-            encoded_path = encode_path(current_path)
+            encoded_path = encode_path_smart(current_path)
             nav_buttons.append(
                 InlineKeyboardButton(
                     text="➡️ Далее",
@@ -326,7 +420,7 @@ def get_file_browser_keyboard(
         parent_path = "/".join(current_path.rstrip('/').split('/')[:-1])
         if not parent_path:
             parent_path = "/"
-        encoded_parent = encode_path(parent_path)
+        encoded_parent = encode_path_smart(parent_path)
 
         buttons.append([
             InlineKeyboardButton(
@@ -337,7 +431,7 @@ def get_file_browser_keyboard(
 
     # Select button (if in select mode)
     if mode == "select":
-        encoded_path = encode_path(current_path)
+        encoded_path = encode_path_smart(current_path)
         buttons.append([
             InlineKeyboardButton(
                 text="📤 Загрузить сюда",
