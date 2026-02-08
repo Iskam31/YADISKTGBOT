@@ -44,6 +44,13 @@ docker-compose down
 3. Set `ENCRYPTION_KEY` (generated with Fernet)
 4. Set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` (from https://my.telegram.org)
 5. Optionally set `YANDEX_CLIENT_ID` for OAuth URL display
+6. Optionally set `WEBHOOK_HOST` to VPS public IP for GitHub webhook notifications
+
+**GitHub Webhooks** (optional, for real-time notifications):
+- `WEBHOOK_HOST=<VPS_IP>` - public IP or domain, enables webhook server
+- `WEBHOOK_PORT=8443` - HTTP server port (default 8443)
+- Port 8443 must be open in firewall (`sudo ufw allow 8443/tcp`)
+- Docker: port 8443 is exposed in docker-compose.yml
 
 **Local Bot API Server** (for files > 20MB, up to 2GB):
 - `USE_LOCAL_API=true` - enables local Bot API server
@@ -113,7 +120,7 @@ router = Router(name="example")
 **Service Layer** (`modules/github/service.py`): GitHubAPI class
 - REST API client for GitHub (base URL: https://api.github.com)
 - Auth via Bearer token (Personal Access Token)
-- Methods: check_token, get_repo, list_repos, list_issues, create_issue, close_issue, get_issue, list_pulls, get_pull
+- Methods: check_token, get_repo, list_repos, list_issues, create_issue, close_issue, get_issue, list_pulls, get_pull, create_webhook, delete_webhook
 - list_repos uses `affiliation=owner,collaborator` to include collab repos
 - list_issues fetches up to 300 items and filters out PRs (GitHub mixes them in /issues endpoint)
 - All operations are async with aiohttp, 15s timeout
@@ -137,6 +144,22 @@ router = Router(name="example")
 **Models** (`modules/github/models.py`): Database tables
 - GitHubToken: Encrypted PAT per user with github_username
 - GitHubRepo: Linked repos with owner/name, is_default flag, unique constraint on (user_id, owner, name)
+- GitHubWebhook: Per-repo webhook registration (github_webhook_id, encrypted_secret, created_by_user_id)
+- GitHubWebhookSub: Per-user subscription to repo notifications, unique constraint on (user_id, repo_owner, repo_name)
+
+**Webhook Server** (`modules/github/webhook_server.py`): aiohttp HTTP server
+- Runs alongside bot polling via `asyncio.create_task()` in main.py
+- Single endpoint: `POST /github/webhook` on port 8443
+- HMAC-SHA256 signature verification per-repo with encrypted secrets
+- Ping events return 200 "pong" without signature check
+- Only starts when `WEBHOOK_HOST` env var is set
+
+**Webhook Handlers** (`modules/github/webhook_handlers.py`): Event processing
+- Supported events: push, pull_request, issues, pull_request_review, issue_comment, check_run
+- Smart filtering: skips merge push commits (covered by PR event), skips successful CI (only failure notifies)
+- 10-second dedup window to prevent duplicate notifications
+- Sends formatted Telegram messages with "🔗 Открыть на GitHub" button to all subscribed users
+- Notification toggle: 🔔/🔕 button in repo actions keyboard
 
 ### Yandex Disk Module
 
@@ -348,6 +371,14 @@ docker-compose up -d --build && docker-compose logs -f bot
 - Close issue (/issue_close 123)
 - List PRs (/prs), view PR details (/pr 15) — check merge/conflict status
 - Test pagination on repos with many issues/PRs
+
+**Webhook testing:**
+- Enable notifications via repo menu (🔔 button)
+- Push a commit — should get push notification in Telegram
+- Open/close issue — should get issue notification
+- Open/merge PR — should get PR notification (no duplicate push)
+- CI failure — should get check_run notification (success is silent)
+- Disable notifications (🔕 button) — webhook deleted from GitHub when no subscribers
 
 **General:**
 - Verify main menu appears after all operations
