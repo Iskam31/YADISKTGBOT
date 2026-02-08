@@ -1,35 +1,38 @@
 version: '3.8'
 
 services:
-  telegram-bot-api:
-    image: aiogram/telegram-bot-api:latest
-    container_name: telegram-bot-api
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "8081:8081"
-    volumes:
-      - telegram-bot-api-data:/var/lib/telegram-bot-api
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # Uncomment this service when you want to use local API for large files (>20MB)
+  # You'll need to add TELEGRAM_API_ID and TELEGRAM_API_HASH to .env
+  # telegram-bot-api:
+  #   image: aiogram/telegram-bot-api:latest
+  #   container_name: telegram-bot-api
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "8081:8081"
+  #   volumes:
+  #     - telegram-bot-api-data:/var/lib/telegram-bot-api
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8081"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
 
   bot:
     build: .
     container_name: yandex_tg_bot
     restart: unless-stopped
-    depends_on:
-      telegram-bot-api:
-        condition: service_healthy
+    # Uncomment depends_on when using local API (USE_LOCAL_API=true)
+    # depends_on:
+    #   telegram-bot-api:
+    #     condition: service_healthy
     env_file:
       - .env
     volumes:
