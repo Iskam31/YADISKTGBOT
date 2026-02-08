@@ -216,7 +216,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
         encryption = get_encryption()
         encrypted_token = encryption.encrypt(token)
 
-        async for session in get_session():
+        async with get_session() as session:
             # Check if token already exists
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == message.from_user.id)
@@ -295,7 +295,7 @@ async def handle_file_upload(message: Message, bot: Bot, file_id: str, file_name
 
     # Get user token from database
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -389,7 +389,7 @@ async def handle_file_upload(message: Message, bot: Bot, file_id: str, file_name
 
         # Save to database
         try:
-            async for session in get_session():
+            async with get_session() as session:
                 new_file = UploadedFile(
                     user_id=user_id,
                     file_name=file_name,
@@ -480,7 +480,7 @@ async def cmd_list_files(message: Message):
     user_id = message.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             # Get last 10 files
             result = await session.execute(
                 select(UploadedFile)
@@ -539,7 +539,7 @@ async def show_file_info(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(UploadedFile)
                 .where(UploadedFile.id == file_id, UploadedFile.user_id == user_id)
@@ -575,7 +575,7 @@ async def confirm_delete(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(UploadedFile)
                 .where(UploadedFile.id == file_id, UploadedFile.user_id == user_id)
@@ -609,7 +609,7 @@ async def execute_delete(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             # Get file info
             result = await session.execute(
                 select(UploadedFile)
@@ -699,7 +699,7 @@ async def callback_view_uploaded(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             # Get last 10 files
             result = await session.execute(
                 select(UploadedFile)
@@ -760,7 +760,7 @@ async def callback_view_all_disk(callback: CallbackQuery, state: FSMContext) -> 
 
     # Check if user has token
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -806,7 +806,7 @@ async def browse_directory(
     """
     # 1. Get user's token from database
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -985,7 +985,7 @@ async def callback_nav_info(callback: CallbackQuery, state: FSMContext) -> None:
     # Get token
     user_id = callback.from_user.id
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -1063,7 +1063,7 @@ async def callback_nav_publish(callback: CallbackQuery, state: FSMContext) -> No
     # Get token
     user_id = callback.from_user.id
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -1146,7 +1146,7 @@ async def callback_nav_delete(callback: CallbackQuery, state: FSMContext) -> Non
     # Get file info for confirmation message
     user_id = callback.from_user.id
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -1214,7 +1214,7 @@ async def callback_nav_confirm_delete(callback: CallbackQuery, state: FSMContext
     # Get token
     user_id = callback.from_user.id
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
@@ -1326,7 +1326,7 @@ async def button_upload(message: Message, state: FSMContext) -> None:
 
     # Check if user has token
     try:
-        async for session in get_session():
+        async with get_session() as session:
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
             )
