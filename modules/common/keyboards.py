@@ -7,10 +7,10 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 def get_main_menu() -> ReplyKeyboardMarkup:
-    """Create persistent main menu with 4 buttons in 2x2 layout.
+    """Create persistent main menu with 6 buttons in 3x2 layout.
 
     Returns:
-        ReplyKeyboardMarkup with Upload, My Files, Settings, and Help buttons
+        ReplyKeyboardMarkup with Upload, My Files, GitHub, Settings, and Help buttons
     """
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
@@ -19,7 +19,10 @@ def get_main_menu() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📁 Мои файлы")
             ],
             [
-                KeyboardButton(text="⚙️ Настройки"),
+                KeyboardButton(text="🐙 GitHub"),
+                KeyboardButton(text="⚙️ Настройки")
+            ],
+            [
                 KeyboardButton(text="ℹ️ Помощь")
             ]
         ],

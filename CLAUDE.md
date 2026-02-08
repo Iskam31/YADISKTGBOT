@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Telegram bot for uploading files to Yandex Disk with automatic public link generation. Built with aiogram 3 and async SQLAlchemy, featuring encrypted OAuth token storage and modular architecture.
+A Telegram bot for uploading files to Yandex Disk and managing GitHub repositories. Built with aiogram 3 and async SQLAlchemy, featuring encrypted OAuth token storage and modular architecture.
 
 ## Development Commands
 
@@ -65,7 +65,7 @@ docker-compose down
 
 **Common Module** (`modules/common/`): Core bot commands and UI
 - Commands: /start, /menu, /help
-- Main menu with persistent ReplyKeyboard (4 buttons: Upload, My Files, Settings, Help)
+- Main menu with persistent ReplyKeyboard (5 buttons: Upload, My Files, GitHub, Settings, Help)
 - Button handlers that delegate to specialized modules
 - get_main_menu() must be used after ALL operations to restore UI
 
@@ -107,6 +107,36 @@ from aiogram import Router
 router = Router(name="example")
 # Define handlers here
 ```
+
+### GitHub Module
+
+**Service Layer** (`modules/github/service.py`): GitHubAPI class
+- REST API client for GitHub (base URL: https://api.github.com)
+- Auth via Bearer token (Personal Access Token)
+- Methods: check_token, get_repo, list_repos, list_issues, create_issue, close_issue, get_issue, list_pulls, get_pull
+- list_repos uses `affiliation=owner,collaborator` to include collab repos
+- list_issues fetches up to 300 items and filters out PRs (GitHub mixes them in /issues endpoint)
+- All operations are async with aiohttp, 15s timeout
+
+**Handlers** (`modules/github/handlers.py`): FSM-based interaction flow
+- GitHubSetup states: waiting_for_token
+- GitHubRepoAdd states: waiting_for_repo
+- GitHubIssueCreate states: waiting_for_title → waiting_for_body
+- Commands: /github, /gh_token, /repo (add|list|set), /issue, /issues, /issue_close, /prs, /pr
+- Button "🐙 GitHub" in main menu opens inline submenu
+- Import repos from GitHub API with one-click adding
+- Automatically deletes messages containing tokens
+
+**Keyboards** (`modules/github/keyboards.py`): UI components
+- get_github_menu_keyboard: Main submenu (repos, issues, PRs)
+- get_repo_list_keyboard: User's linked repos with import button
+- get_import_repos_keyboard: GitHub repos available for import with pagination
+- get_issues_keyboard / get_pulls_keyboard: Paginated lists
+- get_repo_select_keyboard: Choose repo for actions when no default set
+
+**Models** (`modules/github/models.py`): Database tables
+- GitHubToken: Encrypted PAT per user with github_username
+- GitHubRepo: Linked repos with owner/name, is_default flag, unique constraint on (user_id, owner, name)
 
 ### Yandex Disk Module
 
@@ -204,7 +234,7 @@ await message.answer("Operation complete", reply_markup=get_main_menu())
 
 ## Important Notes
 
-- **Startup Order**: Environment → Database → Encryption → BotCore → Modules
+- **Startup Order**: Environment → Database → Import all models → create_tables() → Encryption → BotCore → Modules
 - **Middleware Order**: Registration order determines execution order
 - **Module Loading**: Modules fail silently if not in ENABLED_MODULES
 - **Docker Database**: Uses named volume `bot_data` to persist SQLite database
@@ -217,6 +247,42 @@ await message.answer("Operation complete", reply_markup=get_main_menu())
 - **Callback Data Limit**: 64 bytes max - use smart encoding (base64 or MD5 hash) for long paths
 
 ## Critical Bug Fixes
+
+**0. Models must be imported before create_tables() (CRITICAL)**
+```python
+# In main.py — import ALL models before create_tables()
+# Otherwise new module tables won't be created in the database
+import modules.yandex.models  # noqa: F401
+import modules.github.models  # noqa: F401
+await create_tables()
+```
+
+**0b. Handler registration order matters in aiogram (CRITICAL)**
+```python
+# WRONG - generic handler catches specific callbacks and silently returns
+@router.callback_query(F.data.startswith("gh_repo_"))  # Registered FIRST
+async def generic_handler(...): ...
+
+@router.callback_query(F.data.startswith("gh_repo_pulls_"))  # Never reached!
+async def specific_handler(...): ...
+
+# CORRECT - register specific handlers BEFORE generic catch-all
+@router.callback_query(F.data.startswith("gh_repo_pulls_"))  # Registered FIRST
+async def specific_handler(...): ...
+
+@router.callback_query(F.data.startswith("gh_repo_"))  # Catch-all LAST
+async def generic_handler(...): ...
+```
+
+**0c. Use scalars().first() not scalar_one_or_none() for existence checks**
+```python
+# WRONG - raises MultipleResultsFound when >1 row exists
+result = await session.execute(select(Model).where(Model.user_id == uid))
+has_any = result.scalar_one_or_none() is not None
+
+# CORRECT
+has_any = result.scalars().first() is not None
+```
 
 **1. Missing @asynccontextmanager (CRITICAL)**
 ```python
@@ -259,21 +325,40 @@ session = AiohttpSession(
 
 ## Testing Notes
 
-No automated tests currently exist. When testing:
+No automated tests currently exist. All testing via Docker:
+```bash
+docker-compose up -d --build && docker-compose logs -f bot
+```
+
+**Yandex Disk testing:**
 - Test with various file types (document, photo, video, audio, voice)
 - Test files >20MB to verify local Bot API works
 - Verify token encryption/decryption round-trip
 - Test rate limiting with rapid requests
 - Verify temp file cleanup
-- Test FSM state transitions
 - Test disk navigation with long folder paths
+
+**GitHub testing:**
+- Connect with PAT (/gh_token), verify token deleted from chat
+- Import repos — verify own + collaborator repos appear
+- Add repo manually (/repo add owner/name)
+- Set default repo (/repo set owner/name)
+- Create issue (/issue Title), verify it appears on GitHub
+- List issues (/issues) — verify PRs are filtered out
+- Close issue (/issue_close 123)
+- List PRs (/prs), view PR details (/pr 15) — check merge/conflict status
+- Test pagination on repos with many issues/PRs
+
+**General:**
 - Verify main menu appears after all operations
+- Test FSM state transitions (cancel mid-flow)
 
 ## Future Module Examples
 
-To add a new module like GitHub integration:
-1. Create `modules/github/` directory
+To add a new module:
+1. Create `modules/mymodule/` directory with models.py, service.py, keyboards.py, handlers.py
 2. Implement `setup(dp)` in `__init__.py`
-3. Create handlers with Router
-4. Add to `ENABLED_MODULES` in `.env`
-5. Follow same patterns as yandex module
+3. Import models in `main.py` before `create_tables()`
+4. Add loading logic in `main.py`
+5. Add to `ENABLED_MODULES` default in `config.py`
+6. Follow same patterns as yandex/github modules

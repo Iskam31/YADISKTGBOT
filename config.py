@@ -49,7 +49,7 @@ class Config:
     # Enabled modules
     ENABLED_MODULES: List[str] = os.getenv(
         "ENABLED_MODULES",
-        "modules.common,modules.yandex"
+        "modules.common,modules.yandex,modules.github"
     ).split(",")
 
     # Logging

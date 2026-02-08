@@ -88,6 +88,11 @@ async def on_startup():
             logger.info(f"Directory created successfully")
 
     init_database(Config.DATABASE_URL)
+
+    # Import all models so Base.metadata knows about them before create_tables()
+    import modules.yandex.models  # noqa: F401
+    import modules.github.models  # noqa: F401
+
     await create_tables()
     logger.info("Database initialized successfully")
 
@@ -136,8 +141,9 @@ async def main():
         if 'modules.yandex' in Config.ENABLED_MODULES:
             bot_core.load_module('modules.yandex')
 
-        # Load other enabled modules in the future
-        # Example: if 'modules.github' in Config.ENABLED_MODULES: ...
+        # Load GitHub module if enabled
+        if 'modules.github' in Config.ENABLED_MODULES:
+            bot_core.load_module('modules.github')
 
         logger.info(f"Loaded modules: {', '.join(bot_core.get_loaded_modules())}")
 
