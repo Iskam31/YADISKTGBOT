@@ -5,7 +5,7 @@ Documentation: https://docs.github.com/en/rest
 """
 
 import aiohttp
-from typing import Optional
+from typing import Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -397,3 +397,98 @@ class GitHubAPI:
         except Exception as e:
             logger.error(f"Get pull error: {e}")
             return None
+
+    async def create_webhook(
+        self, owner: str, name: str, url: str, secret: str,
+        events: Optional[List[str]] = None
+    ) -> Optional[dict]:
+        """Create a webhook for a repository.
+
+        Args:
+            owner: Repository owner
+            name: Repository name
+            url: Webhook callback URL
+            secret: Secret for HMAC-SHA256 signature verification
+            events: List of event types to subscribe to
+
+        Returns:
+            Dict with webhook id and info, or None on error
+        """
+        if events is None:
+            events = [
+                "push", "pull_request", "issues",
+                "pull_request_review", "issue_comment", "check_run",
+            ]
+
+        payload = {
+            "name": "web",
+            "active": True,
+            "events": events,
+            "config": {
+                "url": url,
+                "content_type": "json",
+                "secret": secret,
+                "insecure_ssl": "0",
+            },
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.BASE_URL}/repos/{owner}/{name}/hooks",
+                    headers=self.headers,
+                    json=payload,
+                    timeout=self._timeout
+                ) as response:
+                    if response.status == 201:
+                        data = await response.json()
+                        logger.info(f"Webhook created for {owner}/{name}: id={data.get('id')}")
+                        return {
+                            "id": data.get("id"),
+                            "active": data.get("active"),
+                            "events": data.get("events"),
+                            "url": data.get("config", {}).get("url"),
+                        }
+                    elif response.status == 404:
+                        logger.warning(f"Repo not found for webhook: {owner}/{name}")
+                        return None
+                    elif response.status == 403:
+                        logger.warning(f"No permission to create webhook in {owner}/{name}")
+                        return None
+                    elif response.status == 422:
+                        text = await response.text()
+                        logger.warning(f"Webhook validation failed for {owner}/{name}: {text}")
+                        return None
+                    else:
+                        text = await response.text()
+                        logger.error(f"Create webhook failed: {response.status} - {text}")
+                        return None
+        except Exception as e:
+            logger.error(f"Create webhook error: {e}")
+            return None
+
+    async def delete_webhook(self, owner: str, name: str, hook_id: int) -> bool:
+        """Delete a webhook from a repository.
+
+        Returns:
+            True if deleted, False on error
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(
+                    f"{self.BASE_URL}/repos/{owner}/{name}/hooks/{hook_id}",
+                    headers=self.headers,
+                    timeout=self._timeout
+                ) as response:
+                    if response.status == 204:
+                        logger.info(f"Webhook {hook_id} deleted from {owner}/{name}")
+                        return True
+                    elif response.status == 404:
+                        logger.warning(f"Webhook {hook_id} not found in {owner}/{name}")
+                        return True  # Already gone
+                    else:
+                        logger.error(f"Delete webhook failed: {response.status}")
+                        return False
+        except Exception as e:
+            logger.error(f"Delete webhook error: {e}")
+            return False
