@@ -5,6 +5,7 @@ and sends them to subscribed Telegram users.
 """
 
 import logging
+import time
 from typing import Optional, List
 
 from aiogram import Bot
@@ -25,6 +26,10 @@ NOTIFY_ACTIONS = {
     "issue_comment": {"created"},
     "check_run": {"completed"},
 }
+
+# Simple dedup: track recent (repo, event, key) to avoid duplicate notifications
+_recent_events: dict = {}  # key -> timestamp
+_DEDUP_WINDOW = 10  # seconds
 
 
 async def get_webhook_secret(repo_full_name: str) -> Optional[str]:
@@ -79,6 +84,39 @@ async def get_subscribed_users(owner: str, name: str) -> List[int]:
         return []
 
 
+def _dedup_key(event_type: str, owner: str, name: str, payload: dict) -> str:
+    """Generate a dedup key for an event."""
+    action = payload.get("action", "")
+    if event_type == "push":
+        ref = payload.get("ref", "")
+        return f"{owner}/{name}:push:{ref}"
+    elif event_type == "pull_request":
+        number = payload.get("pull_request", {}).get("number", "")
+        return f"{owner}/{name}:pr:{number}:{action}"
+    elif event_type == "issues":
+        number = payload.get("issue", {}).get("number", "")
+        return f"{owner}/{name}:issue:{number}:{action}"
+    elif event_type == "check_run":
+        cr_name = payload.get("check_run", {}).get("name", "")
+        return f"{owner}/{name}:check:{cr_name}"
+    else:
+        return f"{owner}/{name}:{event_type}:{action}"
+
+
+def _is_duplicate(key: str) -> bool:
+    """Check if event was already processed recently."""
+    now = time.time()
+    # Clean old entries
+    expired = [k for k, t in _recent_events.items() if now - t > _DEDUP_WINDOW]
+    for k in expired:
+        del _recent_events[k]
+
+    if key in _recent_events:
+        return True
+    _recent_events[key] = now
+    return False
+
+
 async def process_event(event_type: str, payload: dict, bot: Bot) -> None:
     """Process a GitHub webhook event and send notifications.
 
@@ -101,6 +139,27 @@ async def process_event(event_type: str, payload: dict, bot: Bot) -> None:
         if action not in NOTIFY_ACTIONS[event_type]:
             logger.debug(f"Skipping {event_type} action={action} for {owner}/{name}")
             return
+
+    # Skip push events that are merge commits (already covered by pull_request event)
+    if event_type == "push":
+        head_commit = payload.get("head_commit", {})
+        message = head_commit.get("message", "") if head_commit else ""
+        if message.startswith("Merge pull request"):
+            logger.debug(f"Skipping merge push for {owner}/{name}")
+            return
+
+    # check_run: only notify on failure, not success (too noisy)
+    if event_type == "check_run":
+        conclusion = payload.get("check_run", {}).get("conclusion")
+        if conclusion in ("success", "neutral", "skipped"):
+            logger.debug(f"Skipping successful check_run for {owner}/{name}")
+            return
+
+    # Dedup check
+    dedup = _dedup_key(event_type, owner, name, payload)
+    if _is_duplicate(dedup):
+        logger.debug(f"Duplicate event skipped: {dedup}")
+        return
 
     # Format notification
     text, url = format_event(event_type, payload, owner, name)
