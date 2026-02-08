@@ -123,7 +123,9 @@ async def main():
         # Initialize bot core
         bot_core = BotCore(
             token=Config.BOT_TOKEN,
-            rate_limit=Config.RATE_LIMIT
+            rate_limit=Config.RATE_LIMIT,
+            use_local_api=Config.USE_LOCAL_API,
+            local_api_url=Config.LOCAL_API_SERVER
         )
 
         # Load common module (basic commands)

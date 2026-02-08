@@ -13,6 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import Config
 from core.database import get_session
 from core.crypto import get_encryption
 from .models import YandexToken, UploadedFile
@@ -311,7 +312,9 @@ async def handle_file_upload(message: Message, bot: Bot, file_id: str, file_name
     # Download from Telegram
     temp_dir = os.getenv("TEMP_DIR", "/tmp/telegram_bot_files")
     sanitized_name = sanitize_filename(file_name)
-    local_path = await download_telegram_file(bot, file_id, temp_dir, sanitized_name)
+    local_path = await download_telegram_file(
+        bot, file_id, temp_dir, sanitized_name, use_local_api=Config.USE_LOCAL_API
+    )
 
     if not local_path:
         await status_msg.edit_text("❌ Ошибка скачивания файла из Telegram")
