@@ -43,15 +43,22 @@ class BotCore:
         logger.info("Initializing BotCore...")
 
         # Create session for local API if needed
-        session = None
+        session: Optional[AiohttpSession] = None
         if use_local_api:
             if not local_api_url:
                 raise ValueError("local_api_url is required when use_local_api is True")
 
             logger.info(f"Using LOCAL Bot API Server: {local_api_url}")
-            session = AiohttpSession(
-                api=TelegramAPIServer.from_base(local_api_url)
-            )
+            try:
+                session = AiohttpSession(
+                    api=TelegramAPIServer.from_base(local_api_url)
+                )
+            except Exception as e:
+                raise ConnectionError(
+                    f"Failed to connect to local Bot API server at {local_api_url}. "
+                    f"Make sure the telegram-bot-api service is running and accessible. "
+                    f"Error: {e}"
+                )
         else:
             logger.info("Using PUBLIC Telegram Bot API")
 

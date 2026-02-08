@@ -86,8 +86,9 @@ async def download_telegram_file(
 
         # Log download method
         api_type = "LOCAL" if use_local_api else "PUBLIC"
-        file_size = file.file_size if hasattr(file, 'file_size') and file.file_size else "unknown"
-        logger.info(f"Downloading file via {api_type} API (size: {file_size})")
+        file_size = file.file_size or "unknown"
+        file_id_preview = file_id[:20] + "..." if len(file_id) > 20 else file_id
+        logger.info(f"Downloading file via {api_type} API (file_id: {file_id_preview}, size: {file_size})")
 
         # Create destination path
         file_path = os.path.join(temp_dir, file_name)
