@@ -1,7 +1,9 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy import select
+import logging
 
 from core.database import get_session
 from core.crypto import get_encryption
@@ -9,11 +11,13 @@ from modules.yandex.models import YandexToken
 from modules.yandex.service import YandexDiskAPI
 from .keyboards import get_main_menu
 
+logger = logging.getLogger(__name__)
+
 router = Router()
 
 
 @router.message(Command('start'))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
     await message.answer(
         "👋 <b>Привет! Я бот для загрузки файлов на Яндекс Диск.</b>\n\n"
@@ -25,12 +29,13 @@ async def cmd_start(message: Message):
         "Просто отправь мне любой файл, и я загружу его на твой Яндекс Диск "
         "и пришлю публичную ссылку для скачивания!\n\n"
         "Начни с настройки токена: /token",
+        parse_mode="HTML",
         reply_markup=get_main_menu()
     )
 
 
 @router.message(Command('help'))
-async def cmd_help(message: Message):
+async def cmd_help(message: Message) -> None:
     """Обработчик команды /help"""
     await message.answer(
         "ℹ️ <b>Подробная справка</b>\n\n"
@@ -72,13 +77,13 @@ async def cmd_help(message: Message):
 
 
 @router.message(F.text == "ℹ️ Помощь")
-async def button_help(message: Message):
+async def button_help(message: Message) -> None:
     """Handle Help button press."""
     await cmd_help(message)
 
 
 @router.message(F.text == "📁 Мои файлы")
-async def button_my_files(message: Message):
+async def button_my_files(message: Message) -> None:
     """Handle My Files button press."""
     # Import to avoid circular dependency
     from modules.yandex.handlers import cmd_list_files
@@ -86,7 +91,7 @@ async def button_my_files(message: Message):
 
 
 @router.message(F.text == "📤 Загрузить")
-async def button_upload(message: Message):
+async def button_upload(message: Message) -> None:
     """Handle Upload button press."""
     await message.answer(
         "📤 <b>Загрузка файлов</b>\n\n"
@@ -98,7 +103,7 @@ async def button_upload(message: Message):
 
 
 @router.message(F.text == "⚙️ Настройки")
-async def button_settings(message: Message):
+async def button_settings(message: Message) -> None:
     """Handle Settings button press - show settings menu."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔑 Настроить токен", callback_data="settings_token")],
@@ -115,7 +120,7 @@ async def button_settings(message: Message):
 
 
 @router.callback_query(F.data == "settings_token")
-async def callback_settings_token(callback: CallbackQuery):
+async def callback_settings_token(callback: CallbackQuery) -> None:
     """Handle settings token callback."""
     await callback.message.answer(
         "🔑 <b>Настройка токена</b>\n\n"
@@ -126,12 +131,12 @@ async def callback_settings_token(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "settings_disk_info")
-async def callback_settings_disk_info(callback: CallbackQuery):
+async def callback_settings_disk_info(callback: CallbackQuery) -> None:
     """Handle settings disk info callback - show Yandex Disk statistics."""
     user_id = callback.from_user.id
 
     try:
-        async for session in get_session():
+        async with get_session() as session:
             # Get user token from database
             result = await session.execute(
                 select(YandexToken).where(YandexToken.user_id == user_id)
@@ -186,8 +191,6 @@ async def callback_settings_disk_info(callback: CallbackQuery):
             await callback.answer()
 
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error getting disk info: {e}")
         await callback.message.answer(
             "❌ <b>Ошибка</b>\n\n"
@@ -198,13 +201,15 @@ async def callback_settings_disk_info(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "settings_close")
-async def callback_settings_close(callback: CallbackQuery):
+async def callback_settings_close(callback: CallbackQuery) -> None:
     """Handle settings close callback - delete settings message."""
     try:
         await callback.message.delete()
-    except Exception:
-        # Message might be already deleted
+    except TelegramBadRequest:
+        # Message already deleted or can't be deleted
         pass
+    except Exception as e:
+        logger.warning(f"Unexpected error deleting settings message: {e}")
     await callback.answer()
 
 
