@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - TELEGRAM_LOCAL=1
     ports:
       - "8081:8081"
     volumes:
@@ -30,14 +32,14 @@ services:
     container_name: yandex_tg_bot
     restart: unless-stopped
     depends_on:
-      telegram-bot-api:
-        condition: service_healthy
+      - telegram-bot-api
     env_file:
       - .env
     volumes:
       - bot_data:/app/data
       - ./logs:/app/logs
       - telegram_temp:/tmp/telegram_bot_files
+      - telegram-bot-api-data:/var/lib/telegram-bot-api:ro
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///app/data/bot.db
       - TZ=Europe/Moscow

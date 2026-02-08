@@ -87,13 +87,15 @@ async def download_telegram_file(
         # Log download method
         api_type = "LOCAL" if use_local_api else "PUBLIC"
         file_size = file.file_size or "unknown"
-        file_id_preview = file_id[:20] + "..." if len(file_id) > 20 else file_id
-        logger.info(f"Downloading file via {api_type} API (file_id: {file_id_preview}, size: {file_size})")
+        logger.info(f"Downloading file via {api_type} API (file_id: {file_id}, size: {file_size})")
+        logger.info(f"File path from Telegram: {file.file_path}")
+        logger.info(f"File unique_id: {file.file_unique_id}")
 
         # Create destination path
         file_path = os.path.join(temp_dir, file_name)
 
         # Download file
+        logger.info(f"Attempting download from: {file.file_path} to: {file_path}")
         await bot.download_file(file.file_path, file_path)
 
         logger.info(f"Downloaded Telegram file to {file_path}")

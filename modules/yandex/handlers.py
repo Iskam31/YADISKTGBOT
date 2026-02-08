@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import Config
 from core.database import get_session
 from core.crypto import get_encryption
+from modules.common.keyboards import get_main_menu
 from .models import YandexToken, UploadedFile
 from .service import YandexDiskAPI
 from .keyboards import (
@@ -101,7 +102,7 @@ async def process_token(message: Message, state: FSMContext, bot: Bot):
     # Check for cancel
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("❌ Настройка токена отменена", reply_markup=None)
+        await message.answer("❌ Настройка токена отменена", reply_markup=get_main_menu())
         return
 
     token = message.text.strip()
@@ -169,7 +170,7 @@ async def process_folder_name(message: Message, state: FSMContext):
     # Check for cancel
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("❌ Настройка отменена", reply_markup=None)
+        await message.answer("❌ Настройка отменена", reply_markup=get_main_menu())
         return
 
     folder_name = message.text.strip()
@@ -194,6 +195,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
         folder_name: Selected folder name
         user_id: User ID (if not provided, taken from message.from_user.id)
     """
+
     # Get user_id from parameter or message
     if user_id is None:
         user_id = message.from_user.id
@@ -202,7 +204,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
     token = data.get("token")
 
     if not token:
-        await message.answer("❌ Ошибка: токен не найден. Начните заново с /token")
+        await message.answer("❌ Ошибка: токен не найден. Начните заново с /token", reply_markup=get_main_menu())
         await state.clear()
         return
 
@@ -218,6 +220,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
                 "Не удалось создать папку на Яндекс Диске. Попробуйте другое название или выберите корневую папку.",
                 parse_mode="HTML"
             )
+            await message.answer("Используйте меню ниже:", reply_markup=get_main_menu())
             await state.clear()
             return
 
@@ -255,8 +258,13 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
             f"✅ <b>Настройка завершена!</b>\n\n"
             f"Токен сохранён, будет использоваться {folder_display}.\n\n"
             f"Теперь вы можете отправлять файлы боту для загрузки на Яндекс Диск.",
-            parse_mode="HTML",
-            reply_markup=None
+            parse_mode="HTML"
+        )
+
+        # Return to main menu
+        await message.answer(
+            "Используйте меню ниже для работы сботом:",
+            reply_markup=get_main_menu()
         )
         await state.clear()
 
@@ -267,6 +275,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
             "Не удалось сохранить токен в базу данных. Попробуйте позже.",
             parse_mode="HTML"
         )
+        await message.answer("Используйте меню ниже:", reply_markup=get_main_menu())
         await state.clear()
 
 
@@ -692,15 +701,6 @@ async def close_list(callback: CallbackQuery):
 
 # ==================== FILE BROWSER NAVIGATION ====================
 
-@router.message(F.text == "📁 Мои файлы")
-async def button_my_files(message: Message, state: FSMContext) -> None:
-    """Handle My Files button - show mode selection."""
-    from .keyboards import get_mode_selection_keyboard
-
-    await message.answer(
-        "Выберите режим просмотра:",
-        reply_markup=get_mode_selection_keyboard()
-    )
 
 
 @router.callback_query(F.data == "view_uploaded")

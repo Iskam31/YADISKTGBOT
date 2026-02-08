@@ -50,8 +50,10 @@ class BotCore:
 
             logger.info(f"Using LOCAL Bot API Server: {local_api_url}")
             try:
+                # Note: is_local=True because telegram-bot-api-data volume is mounted
+                # Files are accessed directly from filesystem
                 session = AiohttpSession(
-                    api=TelegramAPIServer.from_base(local_api_url)
+                    api=TelegramAPIServer.from_base(local_api_url, is_local=True)
                 )
             except Exception as e:
                 raise ConnectionError(

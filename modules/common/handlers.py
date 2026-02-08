@@ -21,9 +21,9 @@ async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
     await message.answer(
         "👋 <b>Привет! Я бот для загрузки файлов на Яндекс Диск.</b>\n\n"
-        "📋 <b>Доступные команды:</b>\n"
+        "📋 <b>Основные команды:</b>\n"
+        "• /menu - показать главное меню\n"
         "• /token - настроить OAuth токен Яндекс Диска\n"
-        "• /list - показать список загруженных файлов\n"
         "• /help - подробная справка по использованию\n\n"
         "📎 <b>Как использовать:</b>\n"
         "Просто отправь мне любой файл, и я загружу его на твой Яндекс Диск "
@@ -76,6 +76,17 @@ async def cmd_help(message: Message) -> None:
     )
 
 
+@router.message(Command('menu'))
+async def cmd_menu(message: Message) -> None:
+    """Обработчик команды /menu - показать главное меню"""
+    await message.answer(
+        "📋 <b>Главное меню</b>\n\n"
+        "Используйте кнопки ниже для работы с ботом:",
+        parse_mode="HTML",
+        reply_markup=get_main_menu()
+    )
+
+
 @router.message(F.text == "ℹ️ Помощь")
 async def button_help(message: Message) -> None:
     """Handle Help button press."""
@@ -84,10 +95,14 @@ async def button_help(message: Message) -> None:
 
 @router.message(F.text == "📁 Мои файлы")
 async def button_my_files(message: Message) -> None:
-    """Handle My Files button press."""
+    """Handle My Files button - show mode selection."""
     # Import to avoid circular dependency
-    from modules.yandex.handlers import cmd_list_files
-    await cmd_list_files(message)
+    from modules.yandex.keyboards import get_mode_selection_keyboard
+
+    await message.answer(
+        "Выберите режим просмотра:",
+        reply_markup=get_mode_selection_keyboard()
+    )
 
 
 @router.message(F.text == "📤 Загрузить")
