@@ -17,14 +17,14 @@ class Config:
     # Telegram Bot
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN environment variable is required")
+    # Local Bot API Server (for files > 20 MB, up to 2 GB)
+    USE_LOCAL_API: bool = os.getenv("USE_LOCAL_API", "false").lower() == "true"
+    LOCAL_API_SERVER: str = os.getenv("LOCAL_API_SERVER", "http://telegram-bot-api:8081")
+    TELEGRAM_API_ID: int = int(os.getenv("TELEGRAM_API_ID", "0"))
+    TELEGRAM_API_HASH: str = os.getenv("TELEGRAM_API_HASH", "")
 
     # Encryption
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "")
-
-    if not ENCRYPTION_KEY:
-        raise ValueError("ENCRYPTION_KEY environment variable is required")
 
     # Yandex OAuth (for user instructions)
     YANDEX_CLIENT_ID: str = os.getenv("YANDEX_CLIENT_ID", "")
@@ -63,11 +63,13 @@ class Config:
         Raises:
             ValueError: If required settings are missing
         """
+        # Validate bot token
         if not cls.BOT_TOKEN:
-            raise ValueError("BOT_TOKEN is required")
+            raise ValueError("BOT_TOKEN environment variable is required")
 
+        # Validate encryption key
         if not cls.ENCRYPTION_KEY:
-            raise ValueError("ENCRYPTION_KEY is required")
+            raise ValueError("ENCRYPTION_KEY environment variable is required")
 
         # Validate encryption key format (should be base64)
         try:
@@ -78,6 +80,19 @@ class Config:
                 "ENCRYPTION_KEY must be a valid base64-encoded Fernet key. "
                 "Generate one with: from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
             )
+
+        # Validate local API configuration
+        if cls.USE_LOCAL_API:
+            if not cls.TELEGRAM_API_ID:
+                raise ValueError(
+                    "TELEGRAM_API_ID is required when USE_LOCAL_API is enabled. "
+                    "Get your API credentials from https://my.telegram.org"
+                )
+            if not cls.TELEGRAM_API_HASH:
+                raise ValueError(
+                    "TELEGRAM_API_HASH is required when USE_LOCAL_API is enabled. "
+                    "Get your API credentials from https://my.telegram.org"
+                )
 
         # Create temp directory if it doesn't exist
         cls.TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,6 +124,10 @@ class Config:
         print(f"Log level: {cls.LOG_LEVEL}")
         print(f"Bot token: {'*' * 10}{cls.BOT_TOKEN[-4:]}")
         print(f"Encryption key: {'*' * 10}")
+        print(f"Local Bot API: {'ENABLED' if cls.USE_LOCAL_API else 'DISABLED'}")
+        if cls.USE_LOCAL_API:
+            print(f"Local API Server: {cls.LOCAL_API_SERVER}")
+            print(f"Telegram API ID: {cls.TELEGRAM_API_ID}")
         print("=" * 50)
 
 

@@ -62,7 +62,8 @@ async def download_telegram_file(
     bot,
     file_id: str,
     temp_dir: str,
-    file_name: str
+    file_name: str,
+    use_local_api: bool = False
 ) -> Optional[str]:
     """Download file from Telegram to temporary directory.
 
@@ -71,6 +72,7 @@ async def download_telegram_file(
         file_id: Telegram file ID
         temp_dir: Temporary directory path
         file_name: Name for the downloaded file
+        use_local_api: Whether local Bot API server is being used
 
     Returns:
         Path to downloaded file or None on error
@@ -81,6 +83,12 @@ async def download_telegram_file(
 
         # Get file from Telegram
         file = await bot.get_file(file_id)
+
+        # Log download method
+        api_type = "LOCAL" if use_local_api else "PUBLIC"
+        file_size = file.file_size or "unknown"
+        file_id_preview = file_id[:20] + "..." if len(file_id) > 20 else file_id
+        logger.info(f"Downloading file via {api_type} API (file_id: {file_id_preview}, size: {file_size})")
 
         # Create destination path
         file_path = os.path.join(temp_dir, file_name)

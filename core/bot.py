@@ -9,9 +9,11 @@ Provides BotCore class for:
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from typing import List, Callable, Awaitable
+from typing import List, Callable, Awaitable, Optional
 import logging
 import importlib
 
@@ -23,18 +25,47 @@ logger = logging.getLogger(__name__)
 class BotCore:
     """Core bot class handling initialization and module management."""
 
-    def __init__(self, token: str, rate_limit: int = 5):
+    def __init__(
+        self,
+        token: str,
+        rate_limit: int = 5,
+        use_local_api: bool = False,
+        local_api_url: Optional[str] = None
+    ):
         """Initialize bot core.
 
         Args:
             token: Telegram bot token
             rate_limit: Rate limit per user (requests per second)
+            use_local_api: Whether to use local Bot API server
+            local_api_url: URL of local Bot API server (if use_local_api is True)
         """
         logger.info("Initializing BotCore...")
+
+        # Create session for local API if needed
+        session: Optional[AiohttpSession] = None
+        if use_local_api:
+            if not local_api_url:
+                raise ValueError("local_api_url is required when use_local_api is True")
+
+            logger.info(f"Using LOCAL Bot API Server: {local_api_url}")
+            try:
+                session = AiohttpSession(
+                    api=TelegramAPIServer.from_base(local_api_url)
+                )
+            except Exception as e:
+                raise ConnectionError(
+                    f"Failed to connect to local Bot API server at {local_api_url}. "
+                    f"Make sure the telegram-bot-api service is running and accessible. "
+                    f"Error: {e}"
+                )
+        else:
+            logger.info("Using PUBLIC Telegram Bot API")
 
         # Create bot with default properties
         self.bot = Bot(
             token=token,
+            session=session,
             default=DefaultBotProperties(
                 parse_mode=ParseMode.HTML,
             )
