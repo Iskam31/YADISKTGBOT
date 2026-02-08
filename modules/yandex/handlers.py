@@ -159,7 +159,7 @@ async def select_create_folder(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "folder_root", TokenSetup.waiting_for_folder_name)
 async def select_root_folder(callback: CallbackQuery, state: FSMContext):
     """User chose to use root folder."""
-    await finalize_token_setup(callback.message, state, "/")
+    await finalize_token_setup(callback.message, state, "/", callback.from_user.id)
 
 
 @router.message(TokenSetup.waiting_for_folder_name)
@@ -185,8 +185,18 @@ async def process_folder_name(message: Message, state: FSMContext):
     await finalize_token_setup(message, state, folder_name)
 
 
-async def finalize_token_setup(message: Message, state: FSMContext, folder_name: str):
-    """Finalize token setup by creating folder and saving to database."""
+async def finalize_token_setup(message: Message, state: FSMContext, folder_name: str, user_id: int = None):
+    """Finalize token setup by creating folder and saving to database.
+
+    Args:
+        message: Message to send responses to
+        state: FSM context
+        folder_name: Selected folder name
+        user_id: User ID (if not provided, taken from message.from_user.id)
+    """
+    # Get user_id from parameter or message
+    if user_id is None:
+        user_id = message.from_user.id
 
     data = await state.get_data()
     token = data.get("token")
@@ -219,7 +229,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
         async with get_session() as session:
             # Check if token already exists
             result = await session.execute(
-                select(YandexToken).where(YandexToken.user_id == message.from_user.id)
+                select(YandexToken).where(YandexToken.user_id == user_id)
             )
             existing_token = result.scalar_one_or_none()
 
@@ -231,7 +241,7 @@ async def finalize_token_setup(message: Message, state: FSMContext, folder_name:
             else:
                 # Create new token record
                 new_token = YandexToken(
-                    user_id=message.from_user.id,
+                    user_id=user_id,
                     encrypted_token=encrypted_token,
                     folder_name=folder_name,
                     is_valid=True
