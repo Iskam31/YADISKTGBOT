@@ -52,6 +52,10 @@ class Config:
         "modules.common,modules.yandex,modules.github"
     ).split(",")
 
+    # GitHub Webhooks
+    WEBHOOK_HOST: str = os.getenv("WEBHOOK_HOST", "")  # Public IP or domain
+    WEBHOOK_PORT: int = int(os.getenv("WEBHOOK_PORT", "8443"))
+
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

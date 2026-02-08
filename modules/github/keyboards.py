@@ -39,13 +39,33 @@ def get_repo_list_keyboard(repos: List[dict], page: int = 1) -> InlineKeyboardMa
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_repo_actions_keyboard(owner: str, name: str, is_default: bool) -> InlineKeyboardMarkup:
-    """Actions for a specific repo."""
+def get_repo_actions_keyboard(
+    owner: str, name: str, is_default: bool,
+    has_webhook: bool = False, webhook_available: bool = False
+) -> InlineKeyboardMarkup:
+    """Actions for a specific repo.
+
+    Args:
+        owner: Repository owner
+        name: Repository name
+        is_default: Whether this is the default repo
+        has_webhook: Whether user is subscribed to notifications
+        webhook_available: Whether webhook feature is configured (WEBHOOK_HOST set)
+    """
     full_name = f"{owner}/{name}"
     buttons = [
         [InlineKeyboardButton(text="📝 Issues", callback_data=f"gh_repo_issues_{full_name}")],
         [InlineKeyboardButton(text="🔀 Pull Requests", callback_data=f"gh_repo_pulls_{full_name}")],
     ]
+    if webhook_available:
+        if has_webhook:
+            buttons.append([
+                InlineKeyboardButton(text="🔕 Выкл. уведомления", callback_data=f"gh_wh_off_{full_name}")
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="🔔 Вкл. уведомления", callback_data=f"gh_wh_on_{full_name}")
+            ])
     if not is_default:
         buttons.append([
             InlineKeyboardButton(text="⭐ Сделать по умолчанию", callback_data=f"gh_repo_default_{full_name}")

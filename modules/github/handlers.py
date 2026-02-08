@@ -11,8 +11,9 @@ from sqlalchemy import select, update, delete
 from core.database import get_session
 from core.crypto import get_encryption
 from modules.common.keyboards import get_main_menu
-from .models import GitHubToken, GitHubRepo
+from .models import GitHubToken, GitHubRepo, GitHubWebhook, GitHubWebhookSub
 from .service import GitHubAPI
+from config import Config
 from .keyboards import (
     get_github_menu_keyboard,
     get_repo_list_keyboard,
@@ -118,6 +119,23 @@ def parse_repo_name(text: str) -> tuple | None:
     if not owner or not name:
         return None
     return owner, name
+
+
+async def has_webhook_subscription(user_id: int, owner: str, name: str) -> bool:
+    """Check if user has an active webhook subscription for a repo."""
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(GitHubWebhookSub).where(
+                    GitHubWebhookSub.user_id == user_id,
+                    GitHubWebhookSub.repo_owner == owner,
+                    GitHubWebhookSub.repo_name == name,
+                )
+            )
+            return result.scalar_one_or_none() is not None
+    except Exception as e:
+        logger.error(f"Error checking webhook sub: {e}")
+        return False
 
 
 def format_datetime_short(dt_str: str | None) -> str:
@@ -1480,6 +1498,212 @@ def format_pr_detail(owner: str, name: str, pr: dict) -> str:
     return text
 
 
+# ==================== Webhook Notifications ====================
+
+@router.callback_query(F.data.startswith("gh_wh_on_"))
+async def callback_webhook_enable(callback: CallbackQuery) -> None:
+    """Enable webhook notifications for a repo."""
+    full_name = callback.data[len("gh_wh_on_"):]
+    parsed = parse_repo_name(full_name)
+    if not parsed:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    owner, name = parsed
+    user_id = callback.from_user.id
+
+    if not Config.WEBHOOK_HOST:
+        await callback.answer("Webhooks не настроены", show_alert=True)
+        return
+
+    api, _ = await get_user_github(user_id)
+    if not api:
+        await callback.answer("Подключите GitHub", show_alert=True)
+        return
+
+    # Check if webhook already exists for this repo
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(GitHubWebhook).where(
+                    GitHubWebhook.repo_owner == owner,
+                    GitHubWebhook.repo_name == name,
+                    GitHubWebhook.is_active == True,
+                )
+            )
+            existing_webhook = result.scalar_one_or_none()
+
+            if not existing_webhook:
+                # Create webhook on GitHub
+                import secrets as secrets_module
+                webhook_secret = secrets_module.token_hex(32)
+                webhook_url = f"http://{Config.WEBHOOK_HOST}:{Config.WEBHOOK_PORT}/github/webhook"
+
+                result = await api.create_webhook(owner, name, webhook_url, webhook_secret)
+                if not result:
+                    await callback.answer(
+                        "Не удалось создать webhook. Проверьте права доступа (нужен scope repo).",
+                        show_alert=True
+                    )
+                    return
+
+                # Save webhook to DB
+                from core.crypto import get_encryption
+                encryption = get_encryption()
+                encrypted_secret = encryption.encrypt(webhook_secret)
+
+                session.add(GitHubWebhook(
+                    repo_owner=owner,
+                    repo_name=name,
+                    github_webhook_id=result["id"],
+                    encrypted_secret=encrypted_secret,
+                    created_by_user_id=user_id,
+                    is_active=True,
+                ))
+
+            # Add user subscription
+            sub_result = await session.execute(
+                select(GitHubWebhookSub).where(
+                    GitHubWebhookSub.user_id == user_id,
+                    GitHubWebhookSub.repo_owner == owner,
+                    GitHubWebhookSub.repo_name == name,
+                )
+            )
+            if not sub_result.scalar_one_or_none():
+                session.add(GitHubWebhookSub(
+                    user_id=user_id,
+                    repo_owner=owner,
+                    repo_name=name,
+                ))
+
+            await session.commit()
+
+        await callback.answer("🔔 Уведомления включены!")
+
+        # Refresh repo detail view
+        repo = await _get_repo_record(user_id, owner, name)
+        is_default = repo.is_default if repo else False
+        await _refresh_repo_detail(callback, user_id, owner, name, is_default)
+
+    except Exception as e:
+        logger.error(f"Error enabling webhook: {e}", exc_info=True)
+        await callback.answer("Ошибка при включении уведомлений", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("gh_wh_off_"))
+async def callback_webhook_disable(callback: CallbackQuery) -> None:
+    """Disable webhook notifications for a repo."""
+    full_name = callback.data[len("gh_wh_off_"):]
+    parsed = parse_repo_name(full_name)
+    if not parsed:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    owner, name = parsed
+    user_id = callback.from_user.id
+
+    try:
+        async with get_session() as session:
+            # Remove user subscription
+            await session.execute(
+                delete(GitHubWebhookSub).where(
+                    GitHubWebhookSub.user_id == user_id,
+                    GitHubWebhookSub.repo_owner == owner,
+                    GitHubWebhookSub.repo_name == name,
+                )
+            )
+
+            # Check if anyone else is subscribed
+            remaining = await session.execute(
+                select(GitHubWebhookSub).where(
+                    GitHubWebhookSub.repo_owner == owner,
+                    GitHubWebhookSub.repo_name == name,
+                )
+            )
+            has_other_subs = remaining.scalars().first() is not None
+
+            if not has_other_subs:
+                # No more subscribers — delete webhook from GitHub
+                wh_result = await session.execute(
+                    select(GitHubWebhook).where(
+                        GitHubWebhook.repo_owner == owner,
+                        GitHubWebhook.repo_name == name,
+                        GitHubWebhook.is_active == True,
+                    )
+                )
+                webhook = wh_result.scalar_one_or_none()
+
+                if webhook:
+                    api, _ = await get_user_github(webhook.created_by_user_id)
+                    if not api:
+                        # Try current user's token
+                        api, _ = await get_user_github(user_id)
+
+                    if api:
+                        await api.delete_webhook(owner, name, webhook.github_webhook_id)
+
+                    await session.execute(
+                        delete(GitHubWebhook).where(GitHubWebhook.id == webhook.id)
+                    )
+
+            await session.commit()
+
+        await callback.answer("🔕 Уведомления выключены")
+
+        # Refresh repo detail view
+        repo = await _get_repo_record(user_id, owner, name)
+        is_default = repo.is_default if repo else False
+        await _refresh_repo_detail(callback, user_id, owner, name, is_default)
+
+    except Exception as e:
+        logger.error(f"Error disabling webhook: {e}", exc_info=True)
+        await callback.answer("Ошибка при выключении уведомлений", show_alert=True)
+
+
+async def _get_repo_record(user_id: int, owner: str, name: str) -> GitHubRepo | None:
+    """Get a user's repo record from DB."""
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(GitHubRepo).where(
+                    GitHubRepo.user_id == user_id,
+                    GitHubRepo.owner == owner,
+                    GitHubRepo.name == name,
+                )
+            )
+            return result.scalar_one_or_none()
+    except Exception:
+        return None
+
+
+async def _refresh_repo_detail(
+    callback: CallbackQuery, user_id: int, owner: str, name: str, is_default: bool
+) -> None:
+    """Refresh the repo detail view after a change."""
+    api, _ = await get_user_github(user_id)
+    if api:
+        repo_info = await api.get_repo(owner, name)
+        desc = repo_info.get("description", "Без описания") if repo_info else "—"
+        lang = repo_info.get("language", "—") if repo_info else "—"
+        issues_count = repo_info.get("open_issues_count", 0) if repo_info else 0
+    else:
+        desc, lang, issues_count = "—", "—", 0
+
+    has_wh = await has_webhook_subscription(user_id, owner, name)
+    webhook_available = bool(Config.WEBHOOK_HOST)
+
+    default_text = "\n⭐ Репозиторий по умолчанию" if is_default else ""
+    notify_text = "\n🔔 Уведомления включены" if has_wh else ""
+
+    await callback.message.edit_text(
+        f"📂 <b>{owner}/{name}</b>{default_text}{notify_text}\n\n"
+        f"📝 {desc}\n"
+        f"💻 {lang} | 📝 Issues: {issues_count}",
+        parse_mode="HTML",
+        reply_markup=get_repo_actions_keyboard(owner, name, is_default, has_wh, webhook_available)
+    )
+
+
 # ==================== Catch-all repo detail (must be LAST gh_repo_ handler) ====================
 
 @router.callback_query(F.data.startswith("gh_repo_"))
@@ -1519,13 +1743,18 @@ async def callback_repo_detail(callback: CallbackQuery) -> None:
     else:
         desc, lang, issues_count = "—", "—", 0
 
+    # Check webhook subscription status
+    has_wh = await has_webhook_subscription(user_id, owner, name)
+    webhook_available = bool(Config.WEBHOOK_HOST)
+
     default_text = "\n⭐ Репозиторий по умолчанию" if is_default else ""
+    notify_text = "\n🔔 Уведомления включены" if has_wh else ""
     await callback.message.edit_text(
-        f"📂 <b>{owner}/{name}</b>{default_text}\n\n"
+        f"📂 <b>{owner}/{name}</b>{default_text}{notify_text}\n\n"
         f"📝 {desc}\n"
         f"💻 {lang} | 📝 Issues: {issues_count}",
         parse_mode="HTML",
-        reply_markup=get_repo_actions_keyboard(owner, name, is_default)
+        reply_markup=get_repo_actions_keyboard(owner, name, is_default, has_wh, webhook_available)
     )
     await callback.answer()
 

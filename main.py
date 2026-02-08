@@ -150,6 +150,13 @@ async def main():
         # Start periodic cleanup task in background
         cleanup_task = asyncio.create_task(periodic_cleanup())
 
+        # Start webhook server if configured
+        webhook_task = None
+        if Config.WEBHOOK_HOST:
+            from modules.github.webhook_server import start_webhook_server
+            webhook_task = asyncio.create_task(start_webhook_server(bot_core.bot))
+            logger.info(f"Webhook server starting on port {Config.WEBHOOK_PORT}")
+
         # Start bot polling
         logger.info("=" * 60)
         logger.info("✅ Bot is running! Press Ctrl+C to stop")
@@ -164,6 +171,14 @@ async def main():
                 await cleanup_task
             except asyncio.CancelledError:
                 pass
+
+            # Cancel webhook server task
+            if webhook_task:
+                webhook_task.cancel()
+                try:
+                    await webhook_task
+                except asyncio.CancelledError:
+                    pass
 
     except KeyboardInterrupt:
         logger.info("Received interrupt signal")

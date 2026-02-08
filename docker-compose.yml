@@ -35,6 +35,8 @@ services:
       - telegram-bot-api
     env_file:
       - .env
+    ports:
+      - "8443:8443"
     volumes:
       - bot_data:/app/data
       - ./logs:/app/logs
