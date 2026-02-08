@@ -3,6 +3,7 @@
 Provides Base class for models and session management.
 """
 
+from contextlib import asynccontextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
@@ -62,6 +63,7 @@ async def create_tables() -> None:
     logger.info("Database tables created successfully")
 
 
+@asynccontextmanager
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for dependency injection.
 
