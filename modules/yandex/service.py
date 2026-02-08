@@ -8,6 +8,7 @@ import aiohttp
 from typing import Optional, Callable, Any
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -254,3 +255,165 @@ class YandexDiskAPI:
         except Exception as e:
             logger.error(f"Get disk info error: {e}")
             return None
+
+    async def list_directory(
+        self,
+        path: str = "/",
+        limit: int = 20,
+        offset: int = 0,
+        sort: str = "name"
+    ) -> dict:
+        """List files and folders in a directory.
+
+        Args:
+            path: Directory path (default: root "/")
+            limit: Maximum items to return (default: 20)
+            offset: Number of items to skip (default: 0)
+            sort: Sort field - "name", "created", "modified", "size" (default: "name")
+
+        Returns:
+            dict with keys:
+                - items: List of file/folder dicts
+                - total: Total number of items
+                - offset: Current offset
+                - limit: Items per page
+
+        Raises:
+            aiohttp.ClientError: On API errors
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.BASE_URL}/resources",
+                    headers=self.headers,
+                    params={
+                        "path": path,
+                        "limit": limit,
+                        "offset": offset,
+                        "sort": sort
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        embedded = data.get("_embedded", {})
+                        items = embedded.get("items", [])
+                        total = embedded.get("total", 0)
+
+                        logger.info(f"Listed directory '{path}': {len(items)} items (total: {total})")
+                        return {
+                            "items": items,
+                            "total": total,
+                            "offset": offset,
+                            "limit": limit
+                        }
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"List directory failed: {response.status}, {error_text}")
+                        response.raise_for_status()
+        except Exception as e:
+            logger.error(f"List directory error: {e}")
+            raise
+
+    async def publish_resource(self, path: str) -> str:
+        """Make a file/folder public and get the public URL.
+
+        Args:
+            path: Path to file or folder
+
+        Returns:
+            str: Public URL for the resource
+
+        Raises:
+            aiohttp.ClientError: On API errors
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.put(
+                    f"{self.BASE_URL}/resources/publish",
+                    headers=self.headers,
+                    params={"path": path},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        public_url = data.get("href")
+                        logger.info(f"Resource published: {path} -> {public_url}")
+                        return public_url
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Publish resource failed: {response.status}, {error_text}")
+                        response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Publish resource error: {e}")
+            raise
+
+    async def unpublish_resource(self, path: str) -> bool:
+        """Remove public access from a file/folder.
+
+        Args:
+            path: Path to file or folder
+
+        Returns:
+            bool: True if successful
+
+        Raises:
+            aiohttp.ClientError: On API errors
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.put(
+                    f"{self.BASE_URL}/resources/unpublish",
+                    headers=self.headers,
+                    params={"path": path},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        logger.info(f"Resource unpublished: {path}")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Unpublish resource failed: {response.status}, {error_text}")
+                        response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Unpublish resource error: {e}")
+            raise
+
+    async def get_resource_info(self, path: str) -> dict:
+        """Get detailed information about a file or folder.
+
+        Args:
+            path: Path to file or folder
+
+        Returns:
+            dict with keys:
+                - name: File/folder name
+                - type: "dir" or "file"
+                - size: Size in bytes (for files)
+                - created: Creation timestamp
+                - modified: Modification timestamp
+                - public_url: Public URL if published
+                - ... other Yandex Disk metadata
+
+        Raises:
+            aiohttp.ClientError: On API errors
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.BASE_URL}/resources",
+                    headers=self.headers,
+                    params={"path": path},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        logger.info(f"Got resource info for: {path}")
+                        return data
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Get resource info failed: {response.status}, {error_text}")
+                        response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Get resource info error: {e}")
+            raise
